@@ -142,11 +142,12 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
     listeningTimerTask = null
     listeningTimerRunning = false
 
-    // set up auto close timer
+    // set up auto player close timer
     Log.d(tag, "AutoPlayerClose : Setting up Auto Player Close timer")
     autoCloseTimerTask?.cancel()
     autoCloseTimerTask = null
-    autoCloseTimerTask = Timer("AutoCloseTimer", false).schedule(20000L) {
+    val autoCloseTimeout:Long = 5 * 60 * 1000
+    autoCloseTimerTask = Timer("AutoCloseTimer", false).schedule(autoCloseTimeout) {
       Handler(Looper.getMainLooper()).post() {
         Log.d(tag, "AutoPlayerClose : triggered")
         playerNotificationService.closePlayback()
