@@ -33,7 +33,8 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
 
   private var lastSyncTime:Long = 0
   private var failedSyncs:Int = 0
-  private var pausedAtTime:Long = 0
+
+  private var autoCloseTimerTask: TimerTask? = null
 
   var currentPlaybackSession: PlaybackSession? = null // copy of pb session currently syncing
   var currentLocalMediaProgress: LocalMediaProgress? = null
@@ -60,6 +61,9 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
       currentLocalMediaProgress = null
     }
 
+    autoCloseTimerTask?.cancel()
+    autoCloseTimerTask = null
+
     listeningTimerRunning = true
     lastSyncTime = System.currentTimeMillis()
     currentPlaybackSession = playbackSession.clone()
@@ -85,23 +89,15 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
             }
           }
         }
-        else if (playerNotificationService.currentPlayer.playbackState == 3) {
-          val pausedFor = System.currentTimeMillis() - pausedAtTime
-          Log.d(tag, "ListeningTimer pausedFor : " + pausedFor)
-          // TODO: 60000 needs to come from a app setting
-          if (pausedAtTime > 0 && pausedFor > 60000) {
-            Log.d(tag, "ListeningTimer closePlayback called")
-            playerNotificationService.closePlayback()
-          }
-        }
       }
     }
   }
 
   fun play(playbackSession:PlaybackSession) {
     Log.d(tag, "play ${playbackSession.displayTitle}")
+    autoCloseTimerTask?.cancel()
+    autoCloseTimerTask = null
     MediaEventManager.playEvent(playbackSession)
-    pausedAtTime = 0
     start(playbackSession)
   }
 
@@ -111,11 +107,13 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
       return cb()
     }
 
-    pausedAtTime = 0
     listeningTimerTask?.cancel()
     listeningTimerTask = null
     listeningTimerRunning = false
     Log.d(tag, "stop: Stopping listening for $currentDisplayTitle")
+
+    autoCloseTimerTask?.cancel()
+    autoCloseTimerTask = null
 
     val currentTime = if (shouldSync == true) playerNotificationService.getCurrentTimeSeconds() else 0.0
     if (currentTime > 0) { // Current time should always be > 0 on stop
@@ -140,15 +138,19 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
   fun pause(cb: () -> Unit) {
     if (!listeningTimerRunning) return
 
-    // TODO: closeOnExtendedPause This needs to come from a app setting
-    val closeOnExtendedPause:Boolean = true
-    if(closeOnExtendedPause) {
-      pausedAtTime = System.currentTimeMillis()
-    }
-    else {
-      listeningTimerTask?.cancel()
-      listeningTimerTask = null
-      listeningTimerRunning = false
+    listeningTimerTask?.cancel()
+    listeningTimerTask = null
+    listeningTimerRunning = false
+
+    // set up auto close timer
+    Log.d(tag, "AutoPlayerClose : Setting up Auto Player Close timer")
+    autoCloseTimerTask?.cancel()
+    autoCloseTimerTask = null
+    autoCloseTimerTask = Timer("AutoCloseTimer", false).schedule(20000L) {
+      Handler(Looper.getMainLooper()).post() {
+        Log.d(tag, "AutoPlayerClose : triggered")
+        playerNotificationService.closePlayback()
+      }
     }
 
     Log.d(tag, "pause: Pausing progress syncer for $currentDisplayTitle")
@@ -187,6 +189,9 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
     listeningTimerTask = null
     listeningTimerRunning = false
     Log.d(tag, "finished: Stopping listening for $currentDisplayTitle")
+
+    autoCloseTimerTask?.cancel()
+    autoCloseTimerTask = null
 
     sync(true, currentPlaybackSession?.duration ?: 0.0) { syncResult ->
       reset()
