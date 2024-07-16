@@ -146,11 +146,19 @@ class MediaProgressSyncer(val playerNotificationService: PlayerNotificationServi
     Log.d(tag, "AutoPlayerClose : Setting up Auto Player Close timer")
     autoCloseTimerTask?.cancel()
     autoCloseTimerTask = null
-    val autoCloseTimeout:Long = 5 * 60 * 1000
-    autoCloseTimerTask = Timer("AutoCloseTimer", false).schedule(autoCloseTimeout) {
+    val autoCloseTimeout:Long = 3 * 60 * 1000
+    val stopAfter:Long = System.currentTimeMillis() + autoCloseTimeout
+    autoCloseTimerTask = Timer("AutoCloseTimer", false).schedule(1000, 1000) {
       Handler(Looper.getMainLooper()).post() {
-        Log.d(tag, "AutoPlayerClose : triggered")
-        playerNotificationService.closePlayback()
+        if (System.currentTimeMillis() > stopAfter) {
+          Log.d(tag, "AutoPlayerClose : triggered")
+          autoCloseTimerTask?.cancel()
+          autoCloseTimerTask = null
+          currentPlaybackSession?.let { playbackSession ->
+            MediaEventManager.stopEvent(playbackSession, null)
+          }
+          playerNotificationService.closePlayback()
+        }
       }
     }
 
